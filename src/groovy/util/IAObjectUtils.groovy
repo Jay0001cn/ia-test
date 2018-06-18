@@ -20,11 +20,15 @@ class IAObjectUtils {
 	static def createJob(map){
 		def serverRoot = server.'server-root'
 		def serverSpoolDir = serverRoot + '/spool/slot'
-		def mainJobSpoolDir = serverSpoolDir + map['job-spool-lot'] + '/' + map['job-identifier']
+		def mainJobSpoolDir = serverSpoolDir + map['job-spool-slot'] + '/' + map['job-identifier']
 		def file = new File(mainJobSpoolDir)
-		if(!file.exists()){
-			file.mkdirs()
+		/*if(file.exists()){
+			file.deleteDir()
 		}
+		
+		file.mkdirs()*/
+		
+		map['job-spool-dir'] = mainJobSpoolDir
 		
 		loadAttr(job, map)
 	}
@@ -32,10 +36,20 @@ class IAObjectUtils {
 	static def loadAttr(iaObject, Map map){
 		def st = iaObject.metaClass.static
 		map.each {
-			def getter = 'get' + it.key.toString().capitalize()
+			def part = it.key.toString().capitalize()
+			def getter = 'get' + part
+			def setter = 'set' + part
 			def val = it.value
+			println getter
+			
 			st[getter] = {
 				return val
+			}
+			
+			st[setter] = {el->
+				st[getter] = {
+					return el
+				}
 			}
 		}
 	}

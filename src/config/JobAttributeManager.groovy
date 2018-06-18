@@ -5,9 +5,22 @@ import groovy.sql.Sql
 class JobAttributeManager {
 	def jobIdentifier
 	def envKey
-	def serverAttributes
+	def serverAttributes = [:]
 	def dbConfig
 	def conf = [
+		'local': [
+			'url': 'dbdvadc46.na.averydennison.net/AutomationGahDevHUB',
+			'dbName': 'AutomationGahDevHUB',
+			'gpmDBUrl': "127.0.0.1",
+			'gpmDBName': 'gpmdb',
+			'GUID': 'sa',
+			'GPWD': '5652218love?',
+			
+			'raw': true,
+			'UID': 'gpmgmc',
+			'PWD': 'Avery@123'
+	],
+	
 		'dev': [
 				'url': 'dbdvadc46.na.averydennison.net/AutomationGahDevHUB',
 				'dbName': 'AutomationGahDevHUB',
@@ -45,20 +58,35 @@ class JobAttributeManager {
 		],
 	];
 	
+	def setEnvKey(key){
+		envKey = key	
+		def serverAttrs = loadServerAttributes()
+		IAObjectUtils.setServerAttrs(serverAttrs)
+	}
 	def testInDev(){
-		envKey = "dev"	
+		setEnvKey("dev")
+		return this;
+	}
+	def testInLocal(){
+		setEnvKey("local")
+		return this;	
 	}
 	
 	def testInUat(){
-		envKey = "uat"
+		setEnvKey("uat")
+		return this;
 	}
 	
 	def testInStg(){
 		envKey = "stg"
+		setEnvKey(envKey)
+		return this;
 	}
 	
 	def testInProd(){
 		envKey = "prod"
+		setEnvKey(envKey)
+		return this;
 	}
 	
 	def typeValueKeyMap = [
@@ -79,11 +107,7 @@ class JobAttributeManager {
 		'Double': 'value_double',
 	]
 	
-	def loadServerAttributes(){
-		
-		if(serverAttributes != null){
-			return serverAttributes
-		}
+	def loadServerAttributes(myGpmDbConnectUrl=false){
 		
 		def sql = "SELECT\n" +
 					"	a.name,\n" +
@@ -104,43 +128,77 @@ class JobAttributeManager {
 		def gpmDbConnectUrl = "jdbc:jtds:sqlserver://${dbUrl}:1433/${dbName}"
 		
 		dbConfig = [
-			'gpm-db': gpmDbConnectUrl,
-			'rfid_s-reprint-db-user': envConf['UID'],
-			'rfid_s-reprint-db-pass': envConf['PWD']
-		]
+		            'gpm-db': gpmDbConnectUrl,
+		            'rfid_s-reprint-db-user': envConf['UID'],
+		            'rfid_s-reprint-db-pass': envConf['PWD']
+		            		]
+		serverAttributes['rfid_s-reprint-db-user'] = envConf['UID']
+		serverAttributes['rfid_s-reprint-db-pass'] = envConf['PWD']
 		
-		serverAttributes = retrieveAttributes(sql)
+		if(envConf['raw']) {
+			serverAttributes['rfid_s-reprint-db-user'] = envConf['GUID']
+			serverAttributes['rfid_s-reprint-db-pass'] = envConf['GPWD']
+			serverAttributes = ['gpm-db':gpmDbConnectUrl = "jdbc:jtds:sqlserver://${envConf['gpmDBUrl']}:1433/${dbName};instance=SQLEXPRESS"]
+		}else {
+			serverAttributes = retrieveAttributes(sql)
+			//serverAttributes.putAll(dbConfig)
+			serverAttributes['rfid_s-reprint-db-user'] = envConf['UID']
+			serverAttributes['rfid_s-reprint-db-pass'] = envConf['PWD']
+		}
+		
+		
+		
 		
 		return serverAttributes
 	}
 	
-	def loadJobAttributes(){
+	def loadJobAttributes(jobIdentifier = '1035962'){
 		if(serverAttributes == null){
 			throw new RuntimeException("Server attributes have not been initialized yet!");	
 		}
 		
-		def sql =   "SELECT\n" +
-				"	a.name,\n" +
-				"	a.type,\n" +
-				"	jv.[value],\n" +
-				"	jv.[value_int],\n" +
-				"	jv.[value_bool],\n" +
-				"	jv.[value_date],\n" +
-				"	jv.[value_double]\n" +
-				"FROM\n" +
-				"	job_values jv\n" +
-				"LEFT JOIN attributes a ON jv.id_attr = a.id\n" +
-				"JOIN job_names jn ON jv.id_pao = jn.id\n" +
-				"WHERE\n" +
-				"	jn.name LIKE '%${jobIdentifier}'\n" +
-				"order by a.name"
+		//def jobIdentifier = '1292552'
+		def sql = "SELECT\n" +
+"	myatt.name,\n" +
+"  myatt.type,\n" +
+"	jv.[value],\n" +
+"	jv.value_bool,\n" +
+"	jv.value_date,\n" +
+"	jv.value_double,\n" +
+"	jv.value_int\n" +
+"FROM\n" +
+"	(\n" +
+"		SELECT\n" +
+"			att.id,\n" +
+"			att.name,\n" +
+"		  att.type\n" +
+"		FROM\n" +
+"			attributes att\n" +
+"		WHERE\n" +
+"			att.categories = 'job'\n" +
+"	) AS myatt\n" +
+"LEFT JOIN (\n" +
+"	SELECT\n" +
+"		j.id_attr,\n" +
+"		j.[value],\n" +
+"		j.value_bool,\n" +
+"		j.value_date,\n" +
+"		j.value_double,\n" +
+"		j.value_int\n" +
+"	FROM\n" +
+"		job_values j\n" +
+"	JOIN job_names jn ON j.id_pao = jn.id\n" +
+"	WHERE\n" +
+"		jn.name LIKE '%${jobIdentifier}'\n" +
+") AS jv ON myatt.id = jv.id_attr"
 		
 	    /*if(envKey.equals("prod")){
 			serverAttributes['rfid_s-reprint-db-user'] = "gpmgmc"
 			serverAttributes['rfid_s-reprint-db-pass'] = "Avery@123"
 		}*/
-		
-		return retrieveAttributes(sql)
+		def attrs = retrieveAttributes(sql)
+	    IAObjectUtils.setJobAttrs(attrs)
+		return attrs
 	}
 
 	private retrieveAttributes(String sql) {
@@ -169,7 +227,11 @@ class JobAttributeManager {
 
 		def databaseName = dbConfig.'gpm-db'
 		
-		databaseName = dnsFix(databaseName)
+		def envConf = conf[envKey];
+		if(!envConf['raw']) {
+			databaseName = dnsFix(databaseName)
+		}
+		
 		
 		def username = dbConfig."rfid_s-reprint-db-user"
 		def password = dbConfig."rfid_s-reprint-db-pass"

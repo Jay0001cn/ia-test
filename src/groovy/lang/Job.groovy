@@ -1,5 +1,5 @@
 package groovy.lang
 
-class Job {
+class job {
 
 }
